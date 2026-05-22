@@ -1,9 +1,5 @@
-import { Outlet } from "react-router-dom";
+import AppLayout from "@/layouts/AppLayout";
 
 export default function RootLayout() {
-    return (
-        <div className="min-h-dvh w-full">
-            <Outlet />
-        </div>
-    );
+    return <AppLayout />;
 }
