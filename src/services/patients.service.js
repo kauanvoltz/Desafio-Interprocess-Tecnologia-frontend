@@ -15,3 +15,7 @@ export function createPatient(payload) {
 export function updatePatient(id, payload) {
     return api.put(`/patients/${id}`, payload);
 }
+
+export function getActivePatients() {
+    return api.get("/patients/active");
+}

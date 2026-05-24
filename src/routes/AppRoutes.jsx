@@ -7,6 +7,7 @@ import PatientsEdit from "@/pages/patients/PatientsEdit";
 
 import AppointmentsIndex from "@/pages/appointments/AppointmentsIndex";
 import AppointmentsNew from "@/pages/appointments/AppointmentsNew";
+import AppointmentsEdit from "@/pages/appointments/AppointmentsEdit";
 
 export default function AppRoutes() {
     return (
@@ -18,6 +19,10 @@ export default function AppRoutes() {
                 <Route path="/patients/:id/edit" element={<PatientsEdit />} />
 
                 <Route path="/appointments" element={<AppointmentsIndex />} />
+                <Route
+                    path="/appointments/:id/edit"
+                    element={<AppointmentsEdit />}
+                />
                 <Route path="/appointments/new" element={<AppointmentsNew />} />
             </Route>
         </Routes>
