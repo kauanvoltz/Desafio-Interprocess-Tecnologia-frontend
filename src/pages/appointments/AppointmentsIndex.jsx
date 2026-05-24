@@ -1,83 +1,192 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow, } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCaption, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Pencil, Power } from "lucide-react";
 
-const appointments = [
-    {
-        patient: "Ana Beatriz Carvalho",
-        patientNote: "Sessão de fisioterapia agendada.",
-        dateTime: "27/05/2026, 12:14",
-        status: "Agendado",
-        statusVariant: "scheduled",
-    },
-    {
-        patient: "Ana Beatriz Carvalho",
-        patientNote: "Consulta de rotina. Avaliar exames recentes.",
-        dateTime: "23/05/2026, 12:14",
-        status: "Agendado",
-        statusVariant: "scheduled",
-    },
-    {
-        patient: "Carlos Eduardo Lima",
-        patientNote: "Retorno pós-cirúrgico. Paciente apresenta boa evolução.",
-        dateTime: "19/05/2026, 12:14",
-        status: "Concluído",
-        statusVariant: "done",
-    },
-    {
-        patient: "João Pedro Almeida",
-        patientNote: "Avaliação cardiológica inicial.",
-        dateTime: "15/05/2026, 12:14",
-        status: "Cancelado",
-        statusVariant: "canceled",
-    },
-];
+import { getAppointments, updateAppointment } from "@/services/appointments.service";
+import { getPatients } from "@/services/patients.service";
+import Loading from "@/components/system/Loading";
+import EmptyState from "@/components/system/EmptyState";
+import Modal from "@/components/system/Modal";
+import AppointmentDetails from "@/components/appointments/AppointmentDetails";
 
-function StatusBadge({ statusVariant, status }) {
-    const cfg =
-        statusVariant === "scheduled"
-            ? {
-                badge:
-                    "bg-sky-50 text-sky-700 border-sky-200",
-                dot: "bg-sky-500",
-            }
-            : statusVariant === "done"
-                ? {
-                    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
-                    dot: "bg-emerald-500",
-                }
-                : {
-                    badge: "bg-rose-50 text-rose-700 border-rose-200",
-                    dot: "bg-rose-500",
-                };
+function StatusBadge({ status }) {
+    const isActive = Boolean(status);
+
+    const badgeClass = isActive
+        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+        : "bg-rose-50 text-rose-700 border-rose-200";
+
+    const dotClass = isActive ? "bg-emerald-500" : "bg-rose-500";
+    const label = isActive ? "Ativo" : "Inativo";
 
     return (
-        <Badge variant="outline" className={cfg.badge}>
-            <span className={`inline-block h-2 w-2 rounded-full ${cfg.dot}`} />
-            {status}
+        <Badge variant="outline" className={badgeClass}>
+            <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
+            {label}
         </Badge>
     );
 }
 
 export default function AppointmentsIndex() {
-    const total = appointments.length;
+    const [appointments, setAppointments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [serverError, setServerError] = useState("");
+
+    const [patientOptions, setPatientOptions] = useState([]);
+    const patientNameById = useMemo(() => {
+        const map = new Map();
+        for (const p of patientOptions) {
+            if (p?.id) map.set(p.id, p.name ?? "");
+        }
+        return map;
+    }, [patientOptions]);
+
+    const [patientId, setPatientId] = useState("all");
+    const [status, setStatus] = useState("all");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+
+    const statusValue = useMemo(() => {
+        if (status === "all") return undefined;
+        if (status === "true") return true;
+        if (status === "false") return false;
+        return undefined;
+    }, [status]);
+
+    const filters = useMemo(() => {
+        return {
+            patientId: patientId === "all" ? undefined : patientId,
+            status: statusValue,
+            startDate: startDate || undefined,
+            endDate: endDate || undefined,
+        };
+    }, [patientId, statusValue, startDate, endDate]);
 
     const statusCounts = useMemo(() => {
+        const total = appointments.length;
+        const active = appointments.filter((a) => Boolean(a?.status)).length;
+        const inactive = total - active;
+
         return {
             all: total,
-            scheduled: appointments.filter((a) => a.statusVariant === "scheduled")
-                .length,
-            done: appointments.filter((a) => a.statusVariant === "done").length,
-            canceled: appointments.filter((a) => a.statusVariant === "canceled").length,
+            active,
+            inactive,
         };
-    }, [total]);
+    }, [appointments]);
+
+    const [toggleLoadingId, setToggleLoadingId] = useState(null);
+    const [toggleError, setToggleError] = useState("");
+
+    const [detailsOpen, setDetailsOpen] = useState(false);
+    const [selectedAppointment, setSelectedAppointment] = useState(null);
+
+    const selectedPatient = useMemo(() => {
+        if (!selectedAppointment) return null;
+        const patientIdRaw = selectedAppointment?.patientId;
+        if (!patientIdRaw) return null;
+
+        return patientOptions.find(
+            (p) => String(p?.id) === String(patientIdRaw)
+        );
+    }, [patientOptions, selectedAppointment]);
+
+    const fetchPatients = useCallback(async () => {
+        const res = await getPatients();
+        const data = res?.data ?? [];
+        setPatientOptions(Array.isArray(data) ? data : []);
+    }, []);
+
+    const fetchAppointments = useCallback(async () => {
+        setServerError("");
+        setLoading(true);
+
+        try {
+            const res = await getAppointments(filters);
+            const data = res?.data ?? [];
+            setAppointments(Array.isArray(data) ? data : []);
+        } catch (err) {
+            setServerError(
+                err?.response?.data?.message ||
+                err?.response?.data?.error ||
+                "Não foi possível carregar os atendimentos."
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, [filters]);
+
+    useEffect(() => {
+        let mounted = true;
+
+        (async () => {
+            await fetchPatients();
+            if (!mounted) return;
+        })();
+
+        return () => {
+            mounted = false;
+        };
+    }, [fetchPatients]);
+
+    useEffect(() => {
+        let mounted = true;
+
+        (async () => {
+            await fetchAppointments();
+            if (!mounted) return;
+        })();
+
+        return () => {
+            mounted = false;
+        };
+    }, [fetchAppointments]);
+
+    const handleToggleStatus = useCallback(
+        async (appointment) => {
+            const nextStatus = !appointment?.status;
+
+            setToggleError("");
+            setToggleLoadingId(appointment?.id ?? null);
+
+            try {
+                const payload = {
+                    patientId: appointment?.patientId,
+                    date: appointment?.date,
+                    description: appointment?.description,
+                    status: nextStatus,
+                };
+
+                await updateAppointment(appointment.id, payload);
+                const res = await getAppointments(filters);
+                const data = res?.data ?? [];
+                setAppointments(Array.isArray(data) ? data : []);
+            } catch (err) {
+                setToggleError(
+                    err?.response?.data?.message ||
+                    err?.response?.data?.error ||
+                    "Não foi possível atualizar o status."
+                );
+            } finally {
+                setToggleLoadingId(null);
+            }
+        },
+        [filters]
+    );
+
+    const openAppointmentDetailsByAppointment = useCallback((appointment) => {
+        setSelectedAppointment(appointment);
+        setDetailsOpen(true);
+    }, []);
+
+    const total = appointments.length;
 
     return (
         <div className="space-y-4">
@@ -96,6 +205,12 @@ export default function AppointmentsIndex() {
                 </Button>
             </div>
 
+            {toggleError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    {toggleError}
+                </div>
+            ) : null}
+
             <Card className="rounded-xl overflow-visible">
                 <CardHeader className="pb-3">
                     <CardTitle className="text-base"> </CardTitle>
@@ -103,31 +218,47 @@ export default function AppointmentsIndex() {
 
                 <CardContent className="space-y-4">
                     <div className="grid gap-3 md:grid-cols-4">
-                        <Input placeholder="Período inicial" className="md:col-span-1" />
-                        <Input placeholder="Período final" className="md:col-span-1" />
-                        <Select defaultValue="all">
-                            <SelectTrigger className="w-full">
+                        <Input
+                            type="date"
+                            className="md:col-span-1"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                        />
+
+                        <Input
+                            type="date"
+                            className="md:col-span-1"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                        />
+
+                        <Select value={patientId} onValueChange={setPatientId}>
+                            <SelectTrigger className="w-full md:col-span-1">
                                 <SelectValue placeholder="Todos os pacientes" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Todos os pacientes</SelectItem>
-                                <SelectItem value="1">{appointments[0].patient}</SelectItem>
+                                {patientOptions.map((p) => (
+                                    <SelectItem key={p?.id} value={p?.id}>
+                                        {p?.name}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
-                        <Select defaultValue="all">
-                            <SelectTrigger className="w-full">
+
+                        <Select value={status} onValueChange={setStatus}>
+                            <SelectTrigger className="w-full md:col-span-1">
                                 <SelectValue placeholder="Todos" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">Todos ({statusCounts.all})</SelectItem>
-                                <SelectItem value="scheduled">
-                                    Agendados ({statusCounts.scheduled})
+                                <SelectItem value="all">
+                                    Todos ({statusCounts.all})
                                 </SelectItem>
-                                <SelectItem value="done">
-                                    Concluídos ({statusCounts.done})
+                                <SelectItem value="true">
+                                    Ativos ({statusCounts.active})
                                 </SelectItem>
-                                <SelectItem value="canceled">
-                                    Cancelados ({statusCounts.canceled})
+                                <SelectItem value="false">
+                                    Inativos ({statusCounts.inactive})
                                 </SelectItem>
                             </SelectContent>
                         </Select>
@@ -135,68 +266,127 @@ export default function AppointmentsIndex() {
 
                     <Separator />
 
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-[320px]">Paciente</TableHead>
-                                <TableHead className="w-[220px]">Data / Hora</TableHead>
-                                <TableHead className="w-[160px]">Status</TableHead>
-                                <TableHead className="text-right">Ações</TableHead>
-                            </TableRow>
-                        </TableHeader>
-
-                        <TableBody>
-                            {appointments.map((a, idx) => (
-                                <TableRow key={`${a.patient}-${a.dateTime}-${idx}`}>
-                                    <TableCell>
-                                        <div className="space-y-1">
-                                            <div className="font-medium text-foreground">
-                                                {a.patient}
-                                            </div>
-                                            <div className="text-sm text-muted-foreground">
-                                                {a.patientNote}
-                                            </div>
-                                        </div>
+                    {loading ? (
+                        <div className="flex justify-center py-10">
+                            <Loading text="Carregando atendimentos..." />
+                        </div>
+                    ) : serverError ? (
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                            {serverError}
+                        </div>
+                    ) : appointments.length === 0 ? (
+                        <EmptyState
+                            title="Nenhum atendimento"
+                            description="Nenhum atendimento encontrado para exibir."
+                        />
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableCell className="w-[320px]">
+                                        Paciente
                                     </TableCell>
-
-                                    <TableCell className="text-sm text-muted-foreground">
-                                        {a.dateTime}
+                                    <TableCell className="w-[220px]">
+                                        Data / Hora
                                     </TableCell>
-
-                                    <TableCell>
-                                        <StatusBadge
-                                            statusVariant={a.statusVariant}
-                                            status={a.status}
-                                        />
+                                    <TableCell className="w-[160px]">
+                                        Status
                                     </TableCell>
-
-                                    <TableCell>
-                                        <div className="flex justify-end gap-6 pr-1 text-sm">
-                                            <button
-                                                type="button"
-                                                className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                                Editar
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
-                                            >
-                                                <Power className="h-4 w-4" />
-                                                Inativar
-                                            </button>
-                                        </div>
+                                    <TableCell className="text-right">
+                                        Ações
                                     </TableCell>
                                 </TableRow>
-                            ))}
-                        </TableBody>
+                            </TableHeader>
 
-                        <TableCaption>Exibindo {total} de {total} atendimentos</TableCaption>
-                    </Table>
+                            <TableBody>
+                                {appointments.map((a) => {
+                                    const patientName =
+                                        patientNameById.get(a?.patientId) ||
+                                        "-";
+
+                                    return (
+                                        <TableRow key={a?.id} className="cursor-pointer" onClick={() => openAppointmentDetailsByAppointment(a)}>
+                                            <TableCell>
+                                                <div className="space-y-1">
+                                                    <div className="font-medium text-foreground">
+                                                        {patientName}
+                                                    </div>
+                                                    {a?.description ? (
+                                                        <div className="text-sm text-muted-foreground">
+                                                            {a.description}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            </TableCell>
+
+                                            <TableCell className="text-sm text-muted-foreground">
+                                                {a?.date}
+                                            </TableCell>
+
+                                            <TableCell>
+                                                <StatusBadge status={a?.status} />
+                                            </TableCell>
+
+                                            <TableCell className="text-right">
+                                                <div className="flex justify-end gap-6 pr-1 text-sm">
+                                                    <Link
+                                                        to={`/appointments/${a?.id}/edit`}
+                                                        className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                                                        onClick={(e) =>
+                                                            e.stopPropagation()
+                                                        }
+                                                    >
+                                                        <Pencil className="h-4 w-4" />
+                                                        Editar
+                                                    </Link>
+
+                                                    <button
+                                                        type="button"
+                                                        className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                                                        disabled={toggleLoadingId === a?.id}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleToggleStatus(a);
+                                                        }}
+                                                    >
+                                                        <Power className="h-4 w-4" />
+                                                        {toggleLoadingId === a?.id
+                                                            ? "..."
+                                                            : a?.status
+                                                                ? "Inativar"
+                                                                : "Ativar"}
+                                                    </button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+
+                            <TableCaption>
+                                Exibindo {total} de {total} atendimentos
+                            </TableCaption>
+                        </Table>
+                    )}
                 </CardContent>
             </Card>
+
+            <Modal
+                open={detailsOpen}
+                onOpenChange={(next) => {
+                    setDetailsOpen(next);
+                    if (!next) setSelectedAppointment(null);
+                }}
+                title="Atendimento"
+                description="Visualização completa do atendimento."
+            >
+                {selectedPatient && selectedAppointment ? (
+                    <AppointmentDetails
+                        appointment={selectedAppointment}
+                        patient={selectedPatient}
+                    />
+                ) : null}
+            </Modal>
         </div>
     );
 }
