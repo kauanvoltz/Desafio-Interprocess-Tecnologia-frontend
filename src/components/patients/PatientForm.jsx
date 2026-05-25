@@ -12,8 +12,18 @@ function onlyDigits(value) {
     return String(value ?? "").replace(/\D+/g, "");
 }
 
-function isValidBirthDateBR(value) {
-    return /^\d{2}\/\d{2}\/\d{4}$/.test(String(value ?? "").trim());
+function birthDateBrToInput(value) {
+    const m = String(value ?? "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return "";
+    const [, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function birthDateInputToBr(value) {
+    const m = String(value ?? "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return "";
+    const [, yyyy, mm, dd] = m;
+    return `${dd}/${mm}/${yyyy}`;
 }
 
 export default function PatientForm({
@@ -36,7 +46,7 @@ export default function PatientForm({
 
         return {
             name: initialPatient?.name ?? "",
-            birthDate: initialPatient?.birthDate ?? "",
+            birthDate: birthDateBrToInput(initialPatient?.birthDate ?? ""),
             cpf: initialPatient?.cpf ? String(initialPatient.cpf) : "",
             gender: sexOptions.includes(rawGender) ? rawGender : "masculino",
             cep: initialPatient?.cep ?? "",
@@ -69,7 +79,7 @@ export default function PatientForm({
     async function submit(values) {
         const payload = {
             name: values.name?.trim(),
-            birthDate: String(values.birthDate ?? "").trim(), // dd/mm/yyyy
+            birthDate: birthDateInputToBr(values.birthDate),
             cpf: onlyDigits(values.cpf),
             gender: values.gender, // masculino|feminino|outro (lowercase)
             status:
@@ -135,18 +145,10 @@ export default function PatientForm({
                                                 Data de nascimento
                                             </div>
                                             <Input
-                                                placeholder="dd/mm/aaaa"
+                                                type="date"
                                                 {...register("birthDate", {
                                                     required:
                                                         "Data de nascimento é obrigatória.",
-                                                    minLength: {
-                                                        value: 10,
-                                                        message:
-                                                            "Use o formato dd/mm/aaaa.",
-                                                    },
-                                                    validate: (v) =>
-                                                        isValidBirthDateBR(v) ||
-                                                        "Use o formato dd/mm/aaaa.",
                                                 })}
                                             />
                                             {errors.birthDate ? (

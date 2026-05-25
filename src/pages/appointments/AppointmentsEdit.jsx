@@ -132,10 +132,6 @@ export default function AppointmentsEdit() {
                 <div className="flex justify-center py-10">
                     <Loading text="Carregando..." />
                 </div>
-            ) : serverError ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                    {serverError}
-                </div>
             ) : (
                 <Card className="rounded-xl">
                     <CardHeader className="pb-3">
@@ -143,6 +139,12 @@ export default function AppointmentsEdit() {
                     </CardHeader>
 
                     <CardContent className="space-y-4">
+                        {serverError ? (
+                            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                                {serverError}
+                            </div>
+                        ) : null}
+
                         <form className="space-y-4" onSubmit={handleSubmit(submitForm)}>
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
@@ -184,8 +186,16 @@ export default function AppointmentsEdit() {
                                 <textarea
                                     className="min-h-28 w-full resize-y rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
                                     placeholder="Descreva o atendimento."
-                                    {...register("description")}
+                                    {...register("description", {
+                                        required:
+                                            "Descrição do atendimento é obrigatória.",
+                                    })}
                                 />
+                                {errors.description ? (
+                                    <p className="text-sm text-destructive">
+                                        {errors.description.message}
+                                    </p>
+                                ) : null}
                             </div>
 
                             <div className="space-y-2">

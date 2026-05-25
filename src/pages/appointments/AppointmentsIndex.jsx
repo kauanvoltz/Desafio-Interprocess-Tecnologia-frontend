@@ -19,21 +19,29 @@ import AppointmentDetails from "@/components/appointments/AppointmentDetails";
 
 function StatusBadge({ status }) {
     const isActive = Boolean(status);
-
-    const badgeClass = isActive
-        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-        : "bg-rose-50 text-rose-700 border-rose-200";
-
     const dotClass = isActive ? "bg-emerald-500" : "bg-rose-500";
     const label = isActive ? "Ativo" : "Inativo";
 
     return (
-        <Badge variant="outline" className={badgeClass}>
+        <Badge variant="outline" className={isActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"}>
             <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
             {label}
         </Badge>
     );
 }
+
+function descriptionToPreview(description, maxLen = 48) {
+    const text = String(description ?? "")
+        .replace(/<br\s*\/?>/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!text) return "";
+    if (text.length <= maxLen) return text;
+    return `${text.slice(0, maxLen)}...`;
+}
+
+
 
 export default function AppointmentsIndex() {
     const [appointments, setAppointments] = useState([]);
@@ -312,8 +320,13 @@ export default function AppointmentsIndex() {
                                                         {patientName}
                                                     </div>
                                                     {a?.description ? (
-                                                        <div className="text-sm text-muted-foreground">
-                                                            {a.description}
+                                                        <div
+                                                            className="truncate text-sm text-muted-foreground"
+                                                            title={a.description}
+                                                        >
+                                                            {descriptionToPreview(
+                                                                a.description
+                                                            )}
                                                         </div>
                                                     ) : null}
                                                 </div>
